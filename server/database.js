@@ -6,13 +6,12 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const pastaDados = path.join(__dirname, "..", "dados");
+const caminhoBanco = path.resolve(process.env.DATABASE_PATH ?? path.join(__dirname, "..", "dados", "controle-clientes-demo.db"));
+const pastaDados = path.dirname(caminhoBanco);
 
 if (!fs.existsSync(pastaDados)) {
   fs.mkdirSync(pastaDados, { recursive: true });
 }
-
-const caminhoBanco = path.join(pastaDados, "controle-clientes-demo.db");
 
 const db = new Database(caminhoBanco);
 
@@ -43,6 +42,33 @@ db.exec(`
       ON DELETE CASCADE
   );
 `);
+
+// Triggers protegem bancos existentes sem reconstruir tabelas ou apagar registros.
+const clienteInvalido = `
+  NEW.id NOT BETWEEN 1 AND 9007199254740991
+  OR typeof(NEW.nome) != 'text' OR length(trim(NEW.nome)) NOT BETWEEN 1 AND 200
+  OR NEW.canal NOT IN ('Site', 'Instagram', 'WhatsApp', 'Indicacao')
+  OR length(NEW.data_pedido) != 10 OR substr(NEW.data_pedido, 1, 4) = '0000'
+  OR date(NEW.data_pedido, '+0 days') IS NOT NEW.data_pedido
+  OR typeof(NEW.servicos) != 'integer' OR NEW.servicos NOT BETWEEN 0 AND 9007199254740991
+  OR typeof(NEW.pendencias) != 'integer' OR NEW.pendencias NOT BETWEEN 0 AND 9007199254740991
+  OR typeof(NEW.cancelamentos) != 'integer' OR NEW.cancelamentos NOT BETWEEN 0 AND 9007199254740991
+  OR typeof(NEW.valor_pago) NOT IN ('integer', 'real')
+  OR NEW.valor_pago < 0 OR NEW.valor_pago > 1.7976931348623157e308
+  OR NEW.status NOT IN ('Finalizado', 'Em andamento')
+`;
+for (const operacao of ["INSERT", "UPDATE"]) {
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS validar_cliente_${operacao.toLowerCase()}
+    AFTER ${operacao} ON clientes WHEN ${clienteInvalido}
+    BEGIN SELECT RAISE(ABORT, 'Dados do cliente invalidos.'); END;
+    CREATE TRIGGER IF NOT EXISTS validar_semana_${operacao.toLowerCase()}
+    AFTER ${operacao} ON semanas
+    WHEN typeof(NEW.numero) != 'integer' OR NEW.numero NOT BETWEEN 1 AND 9007199254740991
+    BEGIN SELECT RAISE(ABORT, 'Numero da semana invalido.'); END;
+  `);
+}
+db.exec("CREATE INDEX IF NOT EXISTS clientes_por_semana ON clientes (semana_id, data_pedido, id)");
 
 console.log("Banco SQLite conectado com sucesso.");
 console.log(`Banco: ${caminhoBanco}`);

@@ -1,35 +1,36 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 
 type StatusCliente = "Finalizado" | "Em andamento";
-
 type Cliente = {
-  id: number;
-  nome: string;
-  canal: string;
-  dataPedido: string;
-  servicos: number;
-  pendencias: number;
-  cancelamentos: number;
-  valorPago: number;
-  status: StatusCliente;
+  id: number; nome: string; canal: string; dataPedido: string;
+  servicos: number; pendencias: number; cancelamentos: number;
+  valorPago: number; status: StatusCliente;
 };
-
-type Semana = {
-  numero: number;
-  clientes: Cliente[];
-};
-
+type Semana = { numero: number; clientes: Cliente[] };
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+
+async function verificarResposta(resposta: Response) {
+  if (resposta.ok) return;
+  const dados = await resposta.json().catch(() => null);
+  throw new Error(dados?.erro ?? "Nao foi possivel concluir a operacao.");
+}
+function mensagemErro(erro: unknown) {
+  return erro instanceof Error ? erro.message : "Nao foi possivel concluir a operacao.";
+}
 
 function App() {
   const [semanas, setSemanas] = useState<Semana[]>([]);
-  const [semanaAtual, setSemanaAtual] = useState(1);
+  const [semanaAtual, setSemanaAtual] = useState<number | null>(null);
   const [carregando, setCarregando] = useState(true);
-  const [erroServidor, setErroServidor] = useState(false);
+  const [erroServidor, setErroServidor] = useState<string | null>(null);
+  const [erroFormulario, setErroFormulario] = useState<string | null>(null);
+  const [erroOperacao, setErroOperacao] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+  const operacaoEmAndamento = useRef(false);
+  const sequenciaLeitura = useRef(0);
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [clienteEditando, setClienteEditando] = useState<number | null>(null);
-
   const [nome, setNome] = useState("");
   const [canal, setCanal] = useState("Site");
   const [dataPedido, setDataPedido] = useState("");
@@ -39,220 +40,132 @@ function App() {
   const [valorPago, setValorPago] = useState(0);
   const [status, setStatus] = useState<StatusCliente>("Finalizado");
 
-  async function carregarDados() {
+  const semanaSelecionada = semanas.find((semana) => semana.numero === semanaAtual) ?? semanas[0];
+  const numeroSemana = semanaSelecionada?.numero;
+  const clientes = semanaSelecionada?.clientes ?? [];
+  const bloqueado = ocupado || erroServidor !== null;
+
+  const carregarDados = useCallback(async (
+    mensagemFalha = "Nao foi possivel atualizar os dados. Tente novamente.",
+    signal?: AbortSignal,
+  ) => {
+    const leitura = ++sequenciaLeitura.current;
     try {
-      const resposta = await fetch(`${API_URL}/api/dados`);
-
-      if (!resposta.ok) {
-        throw new Error("Nao foi possivel carregar os dados.");
-      }
-
+      const resposta = await fetch(`${API_URL}/api/dados`, { signal });
+      await verificarResposta(resposta);
       const dados = await resposta.json();
-
-      if (!Array.isArray(dados.semanas)) {
-        throw new Error("Resposta invalida do servidor.");
-      }
-
+      if (!Array.isArray(dados.semanas)) throw new Error("Resposta invalida do servidor.");
+      if (signal?.aborted || leitura !== sequenciaLeitura.current) return false;
       setSemanas(dados.semanas);
-      setErroServidor(false);
-    } catch (erro) {
-      console.error("Erro ao carregar dados:", erro);
-      setErroServidor(true);
+      setSemanaAtual((atual) => dados.semanas.some((s: Semana) => s.numero === atual)
+        ? atual : dados.semanas[0]?.numero ?? null);
+      setErroServidor(null);
+      return true;
+    } catch {
+      if (!signal?.aborted && leitura === sequenciaLeitura.current) setErroServidor(mensagemFalha);
+      return false;
     } finally {
-      setCarregando(false);
+      if (!signal?.aborted && leitura === sequenciaLeitura.current) setCarregando(false);
     }
-  }
-
-  useEffect(() => {
-    // Carga inicial dos dados da API ao abrir a aplicação.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    carregarDados();
   }, []);
 
-  function limparFormulario() {
-    setNome("");
-    setCanal("Site");
-    setDataPedido("");
-    setServicos(0);
-    setPendencias(0);
-    setCancelamentos(0);
-    setValorPago(0);
-    setStatus("Finalizado");
-    setClienteEditando(null);
-  }
+  useEffect(() => {
+    const controller = new AbortController();
+    // Os estados so mudam depois da resposta assincrona da API.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void carregarDados("Nao foi possivel conectar a API. Verifique o servidor e tente novamente.", controller.signal);
+    return () => controller.abort();
+  }, [carregarDados]);
 
+  // O ref bloqueia eventos repetidos antes de o React atualizar os botoes.
+  function iniciarOperacao() {
+    if (operacaoEmAndamento.current) return false;
+    operacaoEmAndamento.current = true;
+    setOcupado(true);
+    setErroOperacao(null);
+    return true;
+  }
+  function concluirOperacao() {
+    operacaoEmAndamento.current = false;
+    setOcupado(false);
+  }
+  async function tentarNovamente() {
+    if (!iniciarOperacao()) return;
+    try { await carregarDados(); } finally { concluirOperacao(); }
+  }
+  function limparFormulario() {
+    setNome(""); setCanal("Site"); setDataPedido("");
+    setServicos(0); setPendencias(0); setCancelamentos(0);
+    setValorPago(0); setStatus("Finalizado");
+    setClienteEditando(null); setErroFormulario(null);
+  }
   function fecharFormulario() {
     limparFormulario();
     setMostrarFormulario(false);
   }
-
   async function salvarCliente() {
-    if (nome.trim() === "" || dataPedido === "") {
-      alert("Preencha o nome do cliente e a data do pedido.");
-      return;
-    }
-
+    if (erroServidor || numeroSemana === undefined || !iniciarOperacao()) return;
+    setErroFormulario(null);
     try {
-      if (clienteEditando !== null) {
-        const resposta = await fetch(`${API_URL}/api/clientes/${clienteEditando}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            nome,
-            canal,
-            dataPedido,
-            servicos,
-            pendencias,
-            cancelamentos,
-            valorPago,
-            status,
-          }),
-        });
-
-        if (!resposta.ok) {
-          throw new Error("Erro ao atualizar cliente.");
-        }
-      } else {
-        const novoCliente: Cliente = {
-          id: Date.now(),
-          nome,
-          canal,
-          dataPedido,
-          servicos,
-          pendencias,
-          cancelamentos,
-          valorPago,
-          status,
-        };
-
-        const resposta = await fetch(`${API_URL}/api/clientes`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            ...novoCliente,
-            semana: semanaAtual,
-          }),
-        });
-
-        if (!resposta.ok) {
-          throw new Error("Erro ao cadastrar cliente.");
-        }
-      }
-
+      if (!nome.trim() || !dataPedido) throw new Error("Preencha o nome e a data do pedido.");
+      const editando = clienteEditando !== null;
+      const resposta = await fetch(`${API_URL}/api/clientes${editando ? `/${clienteEditando}` : ""}`, {
+        method: editando ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nome, canal, dataPedido, servicos, pendencias, cancelamentos, valorPago, status,
+          ...(!editando ? { semana: numeroSemana } : {}),
+        }),
+      });
+      await verificarResposta(resposta);
       fecharFormulario();
-      await carregarDados();
-    } catch (erro) {
-      console.error(erro);
-      alert("Nao foi possivel salvar o cliente no banco de dados.");
-    }
+      await carregarDados("Cliente salvo, mas a lista nao foi atualizada. Nao repita o cadastro; tente atualizar novamente.");
+    } catch (erro) { setErroFormulario(mensagemErro(erro)); }
+    finally { concluirOperacao(); }
   }
-
   function editarCliente(cliente: Cliente) {
-    setNome(cliente.nome);
-    setCanal(cliente.canal);
-    setDataPedido(cliente.dataPedido);
-    setServicos(cliente.servicos);
-    setPendencias(cliente.pendencias);
-    setCancelamentos(cliente.cancelamentos);
-    setValorPago(cliente.valorPago);
-    setStatus(cliente.status);
-    setClienteEditando(cliente.id);
+    setNome(cliente.nome); setCanal(cliente.canal); setDataPedido(cliente.dataPedido);
+    setServicos(cliente.servicos); setPendencias(cliente.pendencias);
+    setCancelamentos(cliente.cancelamentos); setValorPago(cliente.valorPago);
+    setStatus(cliente.status); setClienteEditando(cliente.id); setErroFormulario(null);
     setMostrarFormulario(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
-
   async function excluirCliente(id: number) {
-    const confirmar = window.confirm("Tem certeza que deseja excluir este cliente?");
-
-    if (!confirmar) {
-      return;
-    }
-
+    if (erroServidor || operacaoEmAndamento.current || !window.confirm("Tem certeza que deseja excluir este cliente?")) return;
+    if (!iniciarOperacao()) return;
     try {
-      const resposta = await fetch(`${API_URL}/api/clientes/${id}`, {
-        method: "DELETE",
-      });
-
-      if (!resposta.ok) {
-        throw new Error("Erro ao excluir cliente.");
-      }
-
-      await carregarDados();
-    } catch (erro) {
-      console.error(erro);
-      alert("Nao foi possivel excluir o cliente do banco.");
-    }
+      const resposta = await fetch(`${API_URL}/api/clientes/${id}`, { method: "DELETE" });
+      await verificarResposta(resposta);
+      if (clienteEditando === id) fecharFormulario();
+      await carregarDados("Cliente excluido, mas a lista nao foi atualizada. Tente atualizar novamente.");
+    } catch (erro) { setErroOperacao(mensagemErro(erro)); }
+    finally { concluirOperacao(); }
   }
-
   async function criarNovaSemana() {
+    if (erroServidor || !iniciarOperacao()) return;
     try {
-      const maiorNumero =
-        semanas.length > 0 ? Math.max(...semanas.map((semana) => semana.numero)) : 0;
-      const proximaSemana = maiorNumero + 1;
-
+      const proximaSemana = (semanas.length ? Math.max(...semanas.map((s) => s.numero)) : 0) + 1;
       const resposta = await fetch(`${API_URL}/api/semanas`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          numero: proximaSemana,
-        }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ numero: proximaSemana }),
       });
-
-      if (!resposta.ok) {
-        throw new Error("Erro ao criar semana.");
-      }
-
-      await carregarDados();
-      setSemanaAtual(proximaSemana);
+      await verificarResposta(resposta);
       fecharFormulario();
-    } catch (erro) {
-      console.error(erro);
-      alert("Nao foi possivel criar a nova semana.");
-    }
+      if (await carregarDados("Semana criada, mas a lista nao foi atualizada. Nao repita a criacao; tente atualizar novamente.")) {
+        setSemanaAtual(proximaSemana);
+      }
+    } catch (erro) { setErroOperacao(mensagemErro(erro)); }
+    finally { concluirOperacao(); }
   }
-
   function trocarSemana(numero: number) {
+    if (operacaoEmAndamento.current) return;
     setSemanaAtual(numero);
     fecharFormulario();
   }
-
   if (carregando) {
-    return (
-      <main className="container">
-        <h1>Controle de Clientes</h1>
-        <p>Carregando dados demonstrativos do SQLite...</p>
-      </main>
-    );
+    return <main className="container"><h1>Controle de Clientes</h1><p>Carregando dados demonstrativos do SQLite...</p></main>;
   }
-
-  if (erroServidor && semanas.length === 0) {
-    return (
-      <main className="container">
-        <h1>Controle de Clientes</h1>
-        <p>Nao foi possivel conectar ao banco de dados.</p>
-        <p>Verifique se a API esta rodando no endereco configurado.</p>
-        <button
-          onClick={() => {
-            setCarregando(true);
-            carregarDados();
-          }}
-        >
-          Tentar novamente
-        </button>
-      </main>
-    );
-  }
-
-  const semanaSelecionada =
-    semanas.find((semana) => semana.numero === semanaAtual) ?? semanas[0];
-
-  const clientes = semanaSelecionada?.clientes ?? [];
 
   const totalServicos = clientes.reduce(
     (total, cliente) => total + cliente.servicos,
@@ -314,6 +227,7 @@ function App() {
         <div className="acoes-cabecalho">
           <button
             className="botao-cliente"
+            disabled={bloqueado || numeroSemana === undefined}
             onClick={() => {
               limparFormulario();
               setMostrarFormulario(true);
@@ -324,6 +238,14 @@ function App() {
         </div>
       </header>
 
+      {erroServidor && (
+        <section className="aviso" role="alert">
+          <p>{erroServidor}</p>
+          <button disabled={ocupado} onClick={tentarNovamente}>Tentar novamente</button>
+        </section>
+      )}
+      {erroOperacao && <p className="aviso" role="alert">{erroOperacao}</p>}
+
       {mostrarFormulario && (
         <form className="formulario" onSubmit={(event) => {
           event.preventDefault();
@@ -332,10 +254,11 @@ function App() {
           <h2>
             {clienteEditando !== null
               ? "Editar cliente"
-              : `Adicionar cliente - Semana ${semanaAtual}`}
+              : `Adicionar cliente - Semana ${numeroSemana}`}
           </h2>
 
-          <div className="campos">
+          {erroFormulario && <p role="alert">{erroFormulario}</p>}
+          <fieldset disabled={bloqueado} className="campos">
             <div>
               <label htmlFor="nome">Nome do cliente</label>
               <input
@@ -425,15 +348,15 @@ function App() {
                 <option value="Em andamento">Em andamento</option>
               </select>
             </div>
-          </div>
+          </fieldset>
 
           <div className="acoes-formulario">
-            <button type="button" className="botao-cancelar" onClick={fecharFormulario}>
+            <button type="button" className="botao-cancelar" disabled={ocupado} onClick={fecharFormulario}>
               Cancelar
             </button>
 
-            <button type="submit" className="botao-salvar">
-              {clienteEditando !== null ? "Salvar alteracoes" : "Salvar cliente"}
+            <button type="submit" className="botao-salvar" disabled={bloqueado}>
+              {ocupado ? "Salvando..." : clienteEditando !== null ? "Salvar alteracoes" : "Salvar cliente"}
             </button>
           </div>
         </form>
@@ -441,13 +364,15 @@ function App() {
 
       <section className="semana">
         <div>
-          <h2>Semana {semanaAtual}</h2>
+          <h2>{numeroSemana === undefined ? "Nenhuma semana cadastrada" : `Semana ${numeroSemana}`}</h2>
 
           <div className="lista-semanas">
             {semanas.map((semana) => (
               <button
                 key={semana.numero}
-                className={semana.numero === semanaAtual ? "semana-ativa" : ""}
+                className={semana.numero === numeroSemana ? "semana-ativa" : ""}
+                aria-pressed={semana.numero === numeroSemana}
+                disabled={ocupado}
                 onClick={() => trocarSemana(semana.numero)}
               >
                 Semana {semana.numero}
@@ -456,7 +381,7 @@ function App() {
           </div>
         </div>
 
-        <button onClick={criarNovaSemana}>+ Nova semana</button>
+        <button disabled={bloqueado} onClick={criarNovaSemana}>+ Nova semana</button>
       </section>
 
       <section className="resumo resumo-clientes">
@@ -515,7 +440,7 @@ function App() {
 
           {clientes.length === 0 ? (
             <div className="sem-clientes">
-              Nenhum cliente cadastrado na Semana {semanaAtual}.
+              {numeroSemana === undefined ? "Crie uma semana para cadastrar clientes." : `Nenhum cliente cadastrado na Semana ${numeroSemana}.`}
             </div>
           ) : (
             clientes.map((cliente) => {
@@ -550,6 +475,8 @@ function App() {
                   <div className="acoes-cliente">
                     <button
                       className="botao-editar"
+                      aria-label={`Editar ${cliente.nome}`}
+                      disabled={bloqueado}
                       onClick={() => editarCliente(cliente)}
                     >
                       Editar
@@ -557,6 +484,8 @@ function App() {
 
                     <button
                       className="botao-excluir"
+                      aria-label={`Excluir ${cliente.nome}`}
+                      disabled={bloqueado}
                       onClick={() => excluirCliente(cliente.id)}
                     >
                       Excluir

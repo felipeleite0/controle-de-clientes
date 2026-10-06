@@ -1,102 +1,68 @@
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import db from "./database.js";
+import { ErroHttp, validarCliente, validarInteiroPositivo, validarObjeto } from "./validacao.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const pasta = path.dirname(fileURLToPath(import.meta.url));
+const caminhoJson = process.argv[2] ?? path.join(pasta, "..", "dados", "clientes-demo.json");
 
-const caminhoJson = path.join(__dirname, "..", "dados", "clientes-demo.json");
+try {
+  const dados = JSON.parse(fs.readFileSync(caminhoJson, "utf8"));
+  validarObjeto(dados);
+  if (!Array.isArray(dados.semanas)) throw new ErroHttp(400, "O JSON deve conter um array semanas.");
+  const numeros = new Set();
+  const ids = new Set();
+  const semanas = dados.semanas.map((semana) => {
+    validarObjeto(semana);
+    const numero = validarInteiroPositivo(semana.numero, "Numero da semana");
+    if (numeros.has(numero)) throw new ErroHttp(400, `Semana ${numero} repetida no JSON.`);
+    numeros.add(numero);
+    if (!Array.isArray(semana.clientes)) throw new ErroHttp(400, `Clientes da semana ${numero} invalidos.`);
+    const clientes = semana.clientes.map((entrada) => {
+      const cliente = validarCliente(entrada, { exigirId: true });
+      if (ids.has(cliente.id)) throw new ErroHttp(400, `ID ${cliente.id} repetido no JSON.`);
+      ids.add(cliente.id);
+      return cliente;
+    });
+    return { numero, clientes };
+  });
 
-console.log("");
-console.log("======================================");
-console.log(" MIGRACAO JSON -> SQLITE");
-console.log("======================================");
-console.log("");
+  const inserirSemana = db.prepare("INSERT INTO semanas (numero) VALUES (?) ON CONFLICT(numero) DO NOTHING");
+  const buscarSemana = db.prepare("SELECT id FROM semanas WHERE numero = ?");
+  const buscarCliente = db.prepare(`SELECT id, nome, canal, data_pedido AS dataPedido,
+    servicos, pendencias, cancelamentos, valor_pago AS valorPago, status, semana_id FROM clientes WHERE id = ?`);
+  const inserirCliente = db.prepare(`INSERT INTO clientes
+    (id, nome, canal, data_pedido, servicos, pendencias, cancelamentos, valor_pago, status, semana_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 
-if (!fs.existsSync(caminhoJson)) {
-  throw new Error(
-    "Arquivo dados/clientes-demo.json nao encontrado. Use npm run seed para gerar dados ficticios diretamente no SQLite.",
-  );
-}
-
-const conteudo = fs.readFileSync(caminhoJson, "utf-8");
-const dados = JSON.parse(conteudo);
-
-if (!Array.isArray(dados.semanas)) {
-  throw new Error("O arquivo JSON nao possui semanas validas.");
-}
-
-const inserirSemana = db.prepare(`
-  INSERT OR IGNORE INTO semanas (numero)
-  VALUES (?)
-`);
-
-const buscarSemana = db.prepare(`
-  SELECT id, numero
-  FROM semanas
-  WHERE numero = ?
-`);
-
-const inserirCliente = db.prepare(`
-  INSERT OR IGNORE INTO clientes (
-    id,
-    nome,
-    canal,
-    data_pedido,
-    servicos,
-    pendencias,
-    cancelamentos,
-    valor_pago,
-    status,
-    semana_id
-  )
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`);
-
-const migrarDados = db.transaction(() => {
-  for (const semana of dados.semanas) {
-    inserirSemana.run(semana.numero);
-
-    const semanaBanco = buscarSemana.get(semana.numero);
-
-    if (!semanaBanco) {
-      throw new Error(`Nao foi possivel localizar a Semana ${semana.numero}.`);
+  const resultado = db.transaction(() => {
+    const contagem = { semanasCriadas: 0, inseridos: 0, jaExistentes: 0 };
+    for (const semana of semanas) {
+      contagem.semanasCriadas += inserirSemana.run(semana.numero).changes;
+      const semanaBanco = buscarSemana.get(semana.numero);
+      for (const cliente of semana.clientes) {
+        const existente = buscarCliente.get(cliente.id);
+        if (existente) {
+          const identico = existente.semana_id === semanaBanco.id &&
+            Object.entries(cliente).every(([campo, valor]) => existente[campo] === valor);
+          if (!identico) throw new ErroHttp(409, `ID ${cliente.id} possui dados diferentes no banco. Nenhum registro foi importado.`);
+          contagem.jaExistentes++;
+          continue;
+        }
+        inserirCliente.run(cliente.id, cliente.nome, cliente.canal, cliente.dataPedido,
+          cliente.servicos, cliente.pendencias, cliente.cancelamentos,
+          cliente.valorPago, cliente.status, semanaBanco.id);
+        contagem.inseridos++;
+      }
     }
-
-    for (const cliente of semana.clientes) {
-      inserirCliente.run(
-        cliente.id,
-        cliente.nome,
-        cliente.canal,
-        cliente.dataPedido,
-        cliente.servicos,
-        cliente.pendencias,
-        cliente.cancelamentos,
-        cliente.valorPago,
-        cliente.status,
-        semanaBanco.id,
-      );
-    }
-  }
-});
-
-migrarDados();
-
-const resumo = db
-  .prepare(`
-    SELECT
-      semanas.numero AS semana,
-      COUNT(clientes.id) AS clientes,
-      SUM(clientes.valor_pago) AS faturamento
-    FROM semanas
-    LEFT JOIN clientes
-      ON clientes.semana_id = semanas.id
-    GROUP BY semanas.id
-    ORDER BY semanas.numero
-  `)
-  .all();
-
-console.table(resumo);
-console.log("");
-console.log("Migracao concluida com sucesso!");
+    return contagem;
+  })();
+  console.log("Migracao concluida com sucesso.");
+  console.table(resultado);
+} catch (erro) {
+  console.error(`Migracao cancelada: ${erro.message}`);
+  process.exitCode = 1;
+} finally {
+  db.close();
+}

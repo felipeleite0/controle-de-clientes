@@ -25,12 +25,19 @@ dados/*backup*
 *.db
 *.sqlite
 *.sqlite3
+*.db-*
+*.sqlite-*
+*.sqlite3-*
 *.bak
 *.backup
 *backup*
 
 # Mantem apenas a pasta de dados vazia para o seed demonstrativo
 !dados/.gitkeep
+
+# Resultados locais de testes
+coverage/
+.vitest/
 
 # Editor directories and files
 .vscode/*
