@@ -2,6 +2,8 @@
 
 Data: 06/10/2026.
 
+Este relatório registra a primeira simulação, anterior à publicação e à revisão de código. Para os resultados da versão corrigida, veja [Correções após revisão](correcoes-revisao.md).
+
 ## Cenario
 
 Foi criada uma clonagem local limpa do repositorio de portfolio, somente com arquivos versionados. Nenhum banco, backup ou `node_modules` do projeto original foi utilizado. A simulacao reproduz o download do codigo pelo GitHub; o repositorio ainda nao foi publicado, portanto nao houve teste de acesso remoto ou de hospedagem.
@@ -51,6 +53,6 @@ Os dados de teste foram restaurados com o seed ao terminar. A demonstracao volto
 
 ## Limites do teste
 
-Foi validado o fluxo de demonstracao local neste ambiente. Nao foram testados outros sistemas operacionais, usuarios simultaneos ou deploy publico. A API ainda nao possui autenticacao nem validacao completa de entradas; a validacao HTML do formulario nao substitui validacao no backend.
+Foi validado o fluxo de demonstracao local neste ambiente. Nao foram testados outros sistemas operacionais, usuarios simultaneos ou deploy publico. Na versão inicial aqui registrada, a API não tinha validação completa de entradas. A revisão posterior adicionou validação no backend e testes automatizados; autenticação permanece como melhoria futura.
 
 O GitHub apresenta os arquivos, o README e as capturas. Para experimentar a aplicacao, o visitante deve baixar o projeto e seguir o README. Uma demonstracao acessivel por link exige uma etapa posterior de hospedagem do frontend e da API.

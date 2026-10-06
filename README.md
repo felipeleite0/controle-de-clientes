@@ -25,6 +25,7 @@ O objetivo do projeto é demonstrar uma aplicação full stack simples, funciona
 - better-sqlite3
 - CORS
 - ESLint
+- Vitest, Testing Library e test runner nativo do Node.js
 
 ## Arquitetura
 
@@ -53,17 +54,26 @@ controle-de-clientes/
 │   ├── database.js
 │   ├── migrar.js
 │   ├── seed.js
+│   ├── validacao.js
 │   └── server.js
 ├── src/
 │   ├── App.css
 │   ├── App.tsx
+│   ├── App.test.tsx
+│   ├── test-setup.ts
 │   ├── index.css
 │   └── main.tsx
 ├── .gitignore
+├── tests/
+│   ├── api.test.js
+│   ├── migracao.test.js
+│   └── helpers.js
+├── docs/
 ├── package.json
 ├── package-lock.json
 ├── README.md
-└── vite.config.ts
+├── vite.config.ts
+└── vitest.config.ts
 ```
 
 ## Instalação
@@ -160,6 +170,21 @@ Se o frontend já estiver aberto, encerre-o antes de definir `VITE_API_URL` e in
 
 O [relatório de teste como visitante](docs/teste-visitante.md) registra os resultados e as limitações dessa simulação.
 
+### Testes automatizados
+
+```bash
+npm test
+npm run lint
+npm run build
+```
+
+No PowerShell, use `npm.cmd` se necessário. Para executar separadamente:
+
+- `npm run test:api`: integração HTTP com a API real, SQLite e migração JSON.
+- `npm run test:ui`: componentes React com Vitest, Testing Library e jsdom.
+
+São 45 testes: 36 de backend/migração e 9 de interface. Os testes de backend criam bancos temporários exclusivos, escolhem uma porta livre, encerram seus servidores e removem apenas seus próprios arquivos temporários. Não usam nem alteram o banco demonstrativo local. Os testes React simulam respostas HTTP; a conferência visual complementar está no [relatório das correções](docs/correcoes-revisao.md).
+
 ## Modelagem SQLite
 
 O banco possui duas tabelas principais: `semanas` e `clientes`.
@@ -191,6 +216,12 @@ CREATE TABLE clientes (
 ```
 
 ## Relacionamento semanas/clientes
+
+O `id` de um novo cliente é gerado pelo SQLite quando omitido. IDs explícitos continuam aceitos para compatibilidade com seed e importação; o frontend não usa mais `Date.now()`.
+
+Ao abrir um banco existente, `database.js` adiciona triggers de validação para `INSERT` e `UPDATE`, sem recriar tabelas ou excluir registros. Essas regras impedem novas gravações com datas inexistentes, campos fora das opções permitidas, contagens negativas/fracionadas e pagamentos inválidos. Registros inválidos eventualmente gravados por versões antigas não são apagados automaticamente e precisam de revisão manual.
+
+O índice `clientes_por_semana (semana_id, data_pedido, id)` atende à listagem ordenada de clientes por semana. A API também valida os tipos JSON antes de executar SQL e usa parâmetros nas consultas.
 
 Uma semana pode ter vários clientes. Cada cliente pertence a uma única semana.
 
@@ -335,7 +366,6 @@ Exemplo de corpo:
 
 ```json
 {
-  "id": 104001,
   "nome": "Cliente Exemplo",
   "canal": "Site",
   "dataPedido": "2026-02-02",
@@ -350,11 +380,15 @@ Exemplo de corpo:
 
 ### Atualizar cliente
 
+O cadastro retorna HTTP `201` com `{ "mensagem": "...", "id": 104001 }` (ID ilustrativo). O campo `semana` representa o número da semana, não sua chave interna.
+
 ```http
 PUT /api/clientes/:id
 ```
 
 Atualiza os dados do cliente informado.
+
+Envie os mesmos campos do exemplo de cadastro, sem `semana` ou `id`. Nome, canal e data são obrigatórios. Campos opcionais omitidos em POST ou PUT recebem zero nas contagens/pagamento e `Finalizado` no status; PUT substitui os campos do cliente, não é uma atualização parcial.
 
 ### Excluir cliente
 
@@ -364,15 +398,29 @@ DELETE /api/clientes/:id
 
 Remove o cliente informado.
 
+### Validação e erros
+
+- `nome`: texto não vazio após retirar espaços externos, até 200 caracteres.
+- `canal`: `Site`, `Instagram`, `WhatsApp` ou `Indicacao`.
+- `dataPedido`: data existente em `AAAA-MM-DD`, entre os anos 0001 e 9999.
+- `servicos`, `pendencias`, `cancelamentos`: inteiros seguros não negativos.
+- `valorPago`: número JSON finito não negativo, nunca texto.
+- `status`: `Finalizado` ou `Em andamento`.
+- IDs e número da semana: inteiros seguros positivos.
+
+Erros têm o formato `{ "erro": "Mensagem explicativa." }`: `400` para entradas inválidas, `404` para registros/semanas inexistentes, `409` para número de semana ou ID duplicado e `500` para falhas inesperadas. Dados rejeitados não alteram os registros.
+
 ## Fluxo do CRUD
 
 1. O usuário preenche o formulário no frontend.
 2. O React valida os campos obrigatórios.
 3. O frontend envia uma requisição HTTP para a API.
-4. O Express recebe os dados em JSON.
-5. O backend executa comandos SQL no SQLite.
+4. O Express recebe e valida os dados em JSON.
+5. O backend executa comandos SQL parametrizados no SQLite.
 6. A API retorna sucesso ou erro.
 7. O frontend recarrega os dados e atualiza a interface.
+
+A interface bloqueia operações repetidas enquanto aguarda a resposta. Se a gravação terminar mas a leitura seguinte falhar, mantém os dados anteriores e mostra um aviso persistente, com a opção de tentar atualizar novamente sem repetir o cadastro. Sem nenhuma semana cadastrada, só permite adicionar clientes após criar uma semana. A seleção inicial acompanha as semanas realmente retornadas pela API.
 
 ## Migração e evolução do projeto
 
@@ -389,7 +437,40 @@ O projeto evoluiu em etapas:
 9. criação de seed com dados fictícios;
 10. preparação de uma versão pública sem dados reais.
 
-O arquivo `server/migrar.js` demonstra como uma migração a partir de JSON poderia alimentar o SQLite, mas a versão pública usa `server/seed.js` como caminho principal para gerar dados demonstrativos.
+O arquivo `server/migrar.js` demonstra a migração a partir de JSON, mas a versão pública usa `server/seed.js` como caminho principal para gerar dados demonstrativos.
+
+Para experimentar a migração, crie apenas um JSON fictício local:
+
+```json
+{
+  "semanas": [
+    {
+      "numero": 7,
+      "clientes": [
+        { "id": 7001, "nome": "Pessoa Demonstrativa", "canal": "Site", "dataPedido": "2028-01-01" }
+      ]
+    }
+  ]
+}
+```
+
+```bash
+node server/migrar.js dados/clientes-demo.json
+```
+
+Também é possível passar outro caminho como argumento. O arquivo inteiro é validado antes da importação. IDs devem ser únicos no JSON; clientes idênticos já existentes são contabilizados como `jaExistentes`, sem duplicação. Um ID existente com dados diferentes cancela toda a transação, inclusive semanas/clientes criados anteriormente nessa execução. A saída informa `semanasCriadas`, `inseridos` e `jaExistentes`; uma falha encerra com código 1, sem anunciar sucesso.
+
+Para usar um banco descartável independente, defina `DATABASE_PATH` antes de executar API, seed ou migração. Essa variável troca o arquivo de destino; nunca aponte o seed para um banco que queira preservar.
+
+No PowerShell:
+
+```powershell
+$env:DATABASE_PATH="$env:TEMP/controle-clientes-exemplo.db"
+node server/migrar.js dados/clientes-demo.json
+Remove-Item Env:DATABASE_PATH
+```
+
+A evolução após a revisão acrescentou validações, proteção de banco, importação transacional, tratamento de falhas na interface e testes de regressão, preservando a arquitetura original.
 
 ## Dados demonstrativos
 
@@ -404,6 +485,8 @@ Os dados usados no projeto são fictícios. Exemplos:
 Datas, valores, canais e métricas também foram criados apenas para demonstração.
 
 ## Segurança para publicação
+
+Este projeto é uma demonstração local: não possui autenticação e permite requisições de outras origens via CORS. Não exponha a API na internet nem use dados reais antes de implementar autenticação/autorização, restringir origens, configurar HTTPS e revisar a infraestrutura. Publicar o código no GitHub não hospeda a API.
 
 O `.gitignore` impede a publicação de:
 
@@ -423,6 +506,8 @@ git diff --cached
 ```
 
 Também é recomendado procurar termos privados ou arquivos sensíveis antes do primeiro push.
+
+O `.gitignore` não remove arquivos já rastreados nem limpa o histórico do Git. Revise também `git ls-files` e o histórico antes de publicar; um banco já adicionado precisa sair do índice, e um segredo vazado precisa ser revogado.
 
 ## Sequência sugerida de commits
 
@@ -460,11 +545,15 @@ git commit -m "chore: prepare sanitized portfolio version"
 - organizar dados por período;
 - preparar dados fictícios para um repositório público;
 - configurar `.gitignore` para evitar vazamento de dados privados.
+- validar entradas na API e proteger novas gravações diretamente no banco;
+- usar transações para evitar importações parciais;
+- diferenciar erro de gravação de erro de atualização da interface;
+- criar testes isolados sem tocar nos dados locais.
 
 ## Próximas melhorias
 
 - adicionar autenticação;
-- criar testes automatizados;
+- adicionar testes ponta a ponta no navegador e integração contínua;
 - adicionar filtros por status e canal;
 - incluir paginação na tabela;
 - criar dashboard com gráficos;
