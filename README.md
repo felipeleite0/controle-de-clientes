@@ -81,6 +81,21 @@ O GitHub mostra o código e esta documentação. A aplicação precisa dos dois 
 npm ci --ignore-scripts
 ```
 
+No Windows, se o PowerShell bloquear `npm.ps1`, use `npm.cmd` no lugar de `npm` em todos os comandos. Isso permite executar o projeto sem alterar a politica de seguranca do Windows:
+
+```powershell
+npm.cmd ci --ignore-scripts
+npm.cmd run seed
+npm.cmd run server -- --port=3002
+```
+
+Em outro terminal PowerShell, na mesma pasta:
+
+```powershell
+$env:VITE_API_URL="http://localhost:3002"
+npm.cmd run dev
+```
+
 O `package-lock.json` fixa as versões. Nesta versão, as dependências incluem os binários necessários para o ambiente testado. A opção `--ignore-scripts` evita a tentativa de compilação nativa do SQLite observada com `npm install` no Windows. Instalação, seed e build foram testados com esse comando sem copiar dependências de outro projeto. Para outras plataformas ou atualizações de dependências, confira a disponibilidade dos binários na [documentação do better-sqlite3](https://github.com/WiseLibs/better-sqlite3).
 
 ## Gerar dados fictícios
