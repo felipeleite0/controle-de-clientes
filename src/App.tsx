@@ -236,7 +236,7 @@ function App() {
       <main className="container">
         <h1>Controle de Clientes</h1>
         <p>Nao foi possivel conectar ao banco de dados.</p>
-        <p>Verifique se o servidor esta rodando na porta 3001.</p>
+        <p>Verifique se a API esta rodando no endereco configurado.</p>
         <button
           onClick={() => {
             setCarregando(true);
@@ -325,7 +325,10 @@ function App() {
       </header>
 
       {mostrarFormulario && (
-        <section className="formulario">
+        <form className="formulario" onSubmit={(event) => {
+          event.preventDefault();
+          void salvarCliente();
+        }}>
           <h2>
             {clienteEditando !== null
               ? "Editar cliente"
@@ -334,8 +337,10 @@ function App() {
 
           <div className="campos">
             <div>
-              <label>Nome do cliente</label>
+              <label htmlFor="nome">Nome do cliente</label>
               <input
+                id="nome"
+                required
                 type="text"
                 value={nome}
                 onChange={(e) => setNome(e.target.value)}
@@ -344,8 +349,8 @@ function App() {
             </div>
 
             <div>
-              <label>Canal</label>
-              <select value={canal} onChange={(e) => setCanal(e.target.value)}>
+              <label htmlFor="canal">Canal</label>
+              <select id="canal" value={canal} onChange={(e) => setCanal(e.target.value)}>
                 <option>Site</option>
                 <option>Instagram</option>
                 <option>WhatsApp</option>
@@ -354,8 +359,10 @@ function App() {
             </div>
 
             <div>
-              <label>Data do pedido</label>
+              <label htmlFor="dataPedido">Data do pedido</label>
               <input
+                id="dataPedido"
+                required
                 type="date"
                 value={dataPedido}
                 onChange={(e) => setDataPedido(e.target.value)}
@@ -363,8 +370,9 @@ function App() {
             </div>
 
             <div>
-              <label>Servicos</label>
+              <label htmlFor="servicos">Servicos</label>
               <input
+                id="servicos"
                 type="number"
                 min="0"
                 value={servicos}
@@ -373,8 +381,9 @@ function App() {
             </div>
 
             <div>
-              <label>Pendencias</label>
+              <label htmlFor="pendencias">Pendencias</label>
               <input
+                id="pendencias"
                 type="number"
                 min="0"
                 value={pendencias}
@@ -383,8 +392,9 @@ function App() {
             </div>
 
             <div>
-              <label>Cancelamentos</label>
+              <label htmlFor="cancelamentos">Cancelamentos</label>
               <input
+                id="cancelamentos"
                 type="number"
                 min="0"
                 value={cancelamentos}
@@ -393,8 +403,9 @@ function App() {
             </div>
 
             <div>
-              <label>Valor pago</label>
+              <label htmlFor="valorPago">Valor pago</label>
               <input
+                id="valorPago"
                 type="number"
                 min="0"
                 step="0.01"
@@ -404,8 +415,9 @@ function App() {
             </div>
 
             <div>
-              <label>Status</label>
+              <label htmlFor="status">Status</label>
               <select
+                id="status"
                 value={status}
                 onChange={(e) => setStatus(e.target.value as StatusCliente)}
               >
@@ -416,15 +428,15 @@ function App() {
           </div>
 
           <div className="acoes-formulario">
-            <button className="botao-cancelar" onClick={fecharFormulario}>
+            <button type="button" className="botao-cancelar" onClick={fecharFormulario}>
               Cancelar
             </button>
 
-            <button className="botao-salvar" onClick={salvarCliente}>
+            <button type="submit" className="botao-salvar">
               {clienteEditando !== null ? "Salvar alteracoes" : "Salvar cliente"}
             </button>
           </div>
-        </section>
+        </form>
       )}
 
       <section className="semana">

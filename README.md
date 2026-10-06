@@ -68,9 +68,20 @@ controle-de-clientes/
 
 ## Instalação
 
+### Requisitos e download
+
+- Node.js 24 LTS e npm (ambiente validado: Node.js 24.21.0 / npm 11.19.0).
+- Git para clonar, ou a opção **Code > Download ZIP** do GitHub.
+
+Clone usando a URL mostrada no botão **Code** do seu repositório e entre na pasta `controle-de-clientes`. Se baixar o ZIP, extraia os arquivos e abra um terminal na pasta que contém `package.json`.
+
+O GitHub mostra o código e esta documentação. A aplicação precisa dos dois servidores locais abaixo; ainda não existe um endereço público de demonstração.
+
 ```bash
-npm install
+npm ci --ignore-scripts
 ```
+
+O `package-lock.json` fixa as versões. Nesta versão, as dependências incluem os binários necessários para o ambiente testado. A opção `--ignore-scripts` evita a tentativa de compilação nativa do SQLite observada com `npm install` no Windows. Instalação, seed e build foram testados com esse comando sem copiar dependências de outro projeto. Para outras plataformas ou atualizações de dependências, confira a disponibilidade dos binários na [documentação do better-sqlite3](https://github.com/WiseLibs/better-sqlite3).
 
 ## Gerar dados fictícios
 
@@ -80,13 +91,25 @@ npm run seed
 
 Esse comando cria o banco SQLite local e popula as tabelas com clientes, datas e valores fictícios.
 
+O seed substitui todos os registros do banco demonstrativo. Execute-o antes da primeira abertura e novamente apenas quando quiser restaurar a demonstração.
+
 ## Execução
 
-Em um terminal, inicie a API:
+No **terminal 1**, inicie a API:
 
 ```bash
 npm run server
 ```
+
+No **terminal 2**, na mesma pasta, inicie o frontend:
+
+```bash
+npm run dev
+```
+
+Mantenha os dois terminais abertos e acesse o endereço exibido pelo Vite, normalmente `http://localhost:5173`.
+
+### Se a porta da API estiver ocupada
 
 Se a porta `3001` já estiver em uso, rode a API em outra porta:
 
@@ -109,17 +132,18 @@ No Bash:
 VITE_API_URL=http://localhost:3002 npm run dev
 ```
 
-Em outro terminal, inicie o frontend:
+Se o frontend já estiver aberto, encerre-o antes de definir `VITE_API_URL` e iniciá-lo novamente. Se a porta do frontend estiver ocupada, use o novo endereço exibido pelo Vite.
 
-```bash
-npm run dev
-```
+### Primeiro teste
 
-Depois acesse o endereço exibido pelo Vite, normalmente:
+1. Confirme as três semanas e os oito clientes fictícios.
+2. Adicione um cliente com nome, data e valor demonstrativos.
+3. Confira a linha criada e os totais atualizados.
+4. Edite o cliente e recarregue a página para conferir a persistência.
+5. Exclua esse registro e confirme a atualização dos totais.
+6. Crie uma nova semana e confira que ela começa vazia.
 
-```text
-http://localhost:5173
-```
+O [relatório de teste como visitante](docs/teste-visitante.md) registra os resultados e as limitações dessa simulação.
 
 ## Modelagem SQLite
 

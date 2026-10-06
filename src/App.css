@@ -67,7 +67,7 @@ button {
 .card {
   background: #191c22;
   border: 1px solid #292d36;
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 22px;
 }
 
@@ -128,7 +128,7 @@ button {
 .formulario {
   background: #191c22;
   border: 1px solid #292d36;
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 24px;
   margin-bottom: 30px;
 }
@@ -147,6 +147,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
 }
 
 .campos label {
@@ -156,6 +157,8 @@ button {
 
 .campos input,
 .campos select {
+  width: 100%;
+  min-width: 0;
   background: #101216;
   border: 1px solid #343943;
   border-radius: 8px;
@@ -247,5 +250,51 @@ button {
 @media (max-width: 800px) {
   .resumo-clientes {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .cabecalho,
+  .semana {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .lista-semanas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .campos {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .card {
+    min-width: 0;
+    padding: 16px;
+  }
+
+  .card strong {
+    font-size: 22px;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 480px) {
+  .campos {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cabecalho h1 {
+    font-size: 28px;
+  }
+
+  .formulario {
+    padding: 16px;
+  }
+
+  .acoes-formulario {
+    flex-wrap: wrap;
   }
 }
