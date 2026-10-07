@@ -4,6 +4,12 @@ Sistema web full stack para controle semanal de clientes, serviços prestados, p
 
 O projeto foi preparado como uma versão pública de portfólio, com dados 100% fictícios e sem bancos, backups ou arquivos privados.
 
+## Prévia da aplicação
+
+![Interface do Controle de Clientes com dados fictícios](docs/screenshots/revisao-desktop.jpg)
+
+[Ver captura da interface em celular](docs/screenshots/revisao-mobile.jpg).
+
 ## Destaques
 
 - CRUD completo de clientes.
@@ -53,9 +59,16 @@ O frontend consome a API local em `http://localhost:3001` por padrão. O backend
 
 ### Requisitos
 
-- Node.js 24 LTS ou superior.
+- Node.js 24 (versão indicada pela documentação existente do projeto).
 - npm.
 - Git, ou download do ZIP pelo GitHub.
+
+Clone o repositório e entre na pasta:
+
+```bash
+git clone https://github.com/felipeleite0/controle-de-clientes.git
+cd controle-de-clientes
+```
 
 Instale as dependências:
 
@@ -63,11 +76,17 @@ Instale as dependências:
 npm ci --ignore-scripts
 ```
 
+Esse comando é o procedimento registrado para o ambiente Windows na documentação existente. Em outras plataformas, o `better-sqlite3` pode precisar de seus scripts de instalação para obter ou compilar o binário nativo. Se houver erro ao carregar o SQLite, consulte a [documentação do better-sqlite3](https://github.com/WiseLibs/better-sqlite3).
+
+No PowerShell, se `npm.ps1` estiver bloqueado, use `npm.cmd` no lugar de `npm` nos comandos.
+
 Gere os dados fictícios:
 
 ```bash
 npm run seed
 ```
+
+O seed substitui os registros do banco demonstrativo. Use na primeira execução ou para restaurar os dados fictícios; não execute em um banco que queira preservar.
 
 Em um terminal, inicie a API:
 
@@ -83,6 +102,29 @@ npm run dev
 
 Acesse o endereço exibido pelo Vite, normalmente `http://localhost:5173`.
 
+### Porta da API ocupada
+
+Inicie a API em outra porta:
+
+```bash
+npm run server -- --port=3002
+```
+
+No segundo terminal PowerShell, informe a mesma porta antes de iniciar o frontend:
+
+```powershell
+$env:VITE_API_URL="http://localhost:3002"
+npm.cmd run dev
+```
+
+No Bash:
+
+```bash
+VITE_API_URL=http://localhost:3002 npm run dev
+```
+
+Ainda não há um endereço público de demonstração; a aplicação precisa desses dois servidores locais.
+
 ## Testes
 
 ```bash
@@ -92,6 +134,11 @@ npm run build
 ```
 
 O projeto possui testes de API/migração e testes de interface. Os testes de backend usam bancos temporários próprios e não alteram o banco demonstrativo local.
+
+## Documentação complementar
+
+- [Relatório de teste como visitante](docs/teste-visitante.md).
+- [Correções, validações e testes de regressão](docs/correcoes-revisao.md).
 
 ## Endpoints principais
 
